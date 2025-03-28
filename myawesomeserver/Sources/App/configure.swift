@@ -1,9 +1,8 @@
 import Vapor
+import Fluent
+import FluentSQLiteDriver
 
-// configures your application
 public func configure(_ app: Application) async throws {
-    // uncomment to serve files from /Public folder
-    // app.middleware.use(FileMiddleware(publicDirectory: app.directory.publicDirectory))
-    // register routes
+    app.databases.use(.sqlite(.memory), as: .sqlite)
     try routes(app)
 }
