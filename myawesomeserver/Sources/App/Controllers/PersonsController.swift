@@ -1,6 +1,5 @@
 import Vapor
-
-nonisolated(unsafe) var persons: [Person] = []
+import Foundation
 
 struct PersonsController: RouteCollection {
     func boot(routes: any RoutesBuilder) throws {
@@ -8,95 +7,116 @@ struct PersonsController: RouteCollection {
 
         // CREATE
         persons.post { request in
-            try createPerson(request: request)
+            try await createPerson(request: request)
         }
 
         // READ
-        persons.get { _ in getPersons() }
+        persons.get { request in
+            try await getPersons(request: request)
+        }
 
         persons.get(":id") { request in
-            try getPerson(request: request)
+            try await getPerson(request: request)
         }
 
         // UPDATE
         persons.put(":id") { request in
-            try updatePerson(request: request)
+            try await updatePerson(request: request)
         }
 
         // DELETE
         persons.delete(":id") { request in
-            try deletePerson(request: request)
+            try await deletePerson(request: request)
         }
     }
 
     // MARK: - Create
 
-    private func createPerson(request: Request) throws -> Person {
-        let requestObject = try request.content.decode(CreatePerson.self)
-        let newPerson = Person(
-            name: requestObject.name,
-            dateOfBirth: requestObject.dateOfBirth
-        )
-        persons.append(newPerson)
-        return newPerson
+    @Sendable
+    private func createPerson(request: Request) async throws -> PersonResponseContent {
+        let requestContent = try request.content.decode(PersonRequestContent.self)
+        guard let name = requestContent.name else {
+            throw Abort(.badRequest, reason: "Name is required")
+        }
+
+        let person = Person(requestContent: requestContent, name: name)
+        try await person.save(on: request.db)
+
+        return try PersonResponseContent(person: person)
     }
 
     // MARK: - Read
 
-    private func getPersons() -> [Person] {
-        persons
+    @Sendable
+    private func getPersons(request: Request) async throws -> [PersonResponseContent] {
+        let persons: [Person] = try await Person.query(on: request.db).withDeleted().all()
+        return try persons.map { person in
+            try PersonResponseContent(person: person)
+        }
     }
 
-    private func getPerson(request: Request) throws -> Person {
+    @Sendable
+    private func getPerson(request: Request) async throws -> PersonResponseContent {
         let id: UUID? = request.parameters.get("id")
 
-        if let person = persons.first(where: { $0.id == id }) {
-            return person
+        guard let person = try await Person.find(id, on: request.db) else {
+            throw Abort(.notFound)
         }
-        throw Abort(.notFound)
+
+        return try PersonResponseContent(person: person)
     }
 
     // MARK: - Update
 
-    private func updatePerson(request: Request) throws -> Person {
-        let existingPerson = try getPerson(request: request)
-        let requestObject = try request.content.decode(UpdatePerson.self)
+    @Sendable
+    private func updatePerson(request: Request) async throws -> PersonResponseContent {
+        let id: UUID? = request.parameters.get("id")
 
-        let updatedPerson = Person(
-            id: existingPerson.id,
-            name: requestObject.name ?? existingPerson.name,
-            dateOfBirth: requestObject.dateOfBirth ?? existingPerson.dateOfBirth
-        )
+        guard let person = try await Person.find(id, on: request.db) else {
+            throw Abort(.notFound)
+        }
 
-        var newPersonsArray = persons.filter { $0.id != existingPerson.id }
-        newPersonsArray.append(updatedPerson)
+        let requestContent = try request.content.decode(PersonRequestContent.self)
+        person.setValue(requestContent.name, to: \.name)
+        person.setValue(requestContent.dateOfBirth, to: \.dateOfBirth)
+        person.setValue(requestContent.isActive, to: \.isActive)
+        person.setEyeColor(requestContent.eyeColor)
+        try await person.update(on: request.db)
 
-        persons = newPersonsArray
-
-        return updatedPerson
+        return try PersonResponseContent(person: person)
     }
 
     // MARK: - DELETE
 
-    private func deletePerson(request: Request) throws -> HTTPStatus {
+    @Sendable
+    private func deletePerson(request: Request) async throws -> HTTPStatus {
         let id: UUID? = request.parameters.get("id")
 
-        guard let id else {
+        guard let person = try await Person.find(id, on: request.db) else {
             throw Abort(.notFound)
         }
 
-        persons = persons.filter { $0.id != id }
+        try await person.delete(on: request.db)
 
         return HTTPStatus.noContent
     }
 }
 
-struct CreatePerson: Content {
-    let name: String
-    let dateOfBirth: Date?
-}
+// MARK: - Private helpers
 
-struct UpdatePerson: Content {
-    let name: String?
-    let dateOfBirth: Date?
+private extension Person {
+    func setValue<Value>(
+        _ value: Value?,
+        to keyPath: ReferenceWritableKeyPath<Person, Value>
+    ) {
+        if let value {
+            self[keyPath: keyPath] = value
+        }
+    }
+
+    func setEyeColor(_ colorRawValue: String?) {
+        if let colorRawValue {
+            eyeColor = EyeColor(rawValue: colorRawValue)
+        }
+    }
 }

@@ -4,5 +4,7 @@ import FluentSQLiteDriver
 
 public func configure(_ app: Application) async throws {
     app.databases.use(.sqlite(.memory), as: .sqlite)
+    app.migrations.add(CreatePersonMigration())
+    try await app.autoMigrate()
     try routes(app)
 }
