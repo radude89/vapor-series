@@ -40,9 +40,18 @@ struct PersonsController: RouteCollection {
         }
 
         let person = Person(requestContent: requestContent, name: name)
-        try await person.save(on: request.db)
+        try await person.create(on: request.db)
 
-        return try PersonResponseContent(person: person)
+        try await createPassportIfNeeded(
+            person: person,
+            passportRequestContent: requestContent.passport,
+            request: request
+        )
+
+        return try await PersonResponseContent(
+            person: person,
+            passport: person.$passport.get(on: request.db)
+        )
     }
 
     // MARK: - Read
@@ -50,9 +59,13 @@ struct PersonsController: RouteCollection {
     @Sendable
     private func getPersons(request: Request) async throws -> [PersonResponseContent] {
         let persons: [Person] = try await Person.query(on: request.db).withDeleted().all()
-        return try persons.map { person in
-            try PersonResponseContent(person: person)
+        var results: [PersonResponseContent] = []
+        for person in persons {
+            let passport = try await person.$passport.get(on: request.db)
+            let responseContent = try PersonResponseContent(person: person, passport: passport)
+            results.append(responseContent)
         }
+        return results
     }
 
     @Sendable
@@ -99,6 +112,21 @@ struct PersonsController: RouteCollection {
         try await person.delete(on: request.db)
 
         return HTTPStatus.noContent
+    }
+
+    @Sendable
+    private func createPassportIfNeeded(
+        person: Person,
+        passportRequestContent: PassportRequestContent?,
+        request: Request
+    ) async throws {
+        guard let passportRequestContent else { return }
+
+        let passport = Passport(
+            passportNumber: passportRequestContent.number,
+            personID: try person.requireID()
+        )
+        try await passport.create(on: request.db)
     }
 }
 

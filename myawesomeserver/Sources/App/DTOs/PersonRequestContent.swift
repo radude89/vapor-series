@@ -5,6 +5,11 @@ struct PersonRequestContent: Content {
     let dateOfBirth: Date?
     let isActive: Bool?
     let eyeColor: String?
+    let passport: PassportRequestContent?
+}
+
+struct PassportRequestContent: Content {
+    let number: String
 }
 
 // MARK: - Helper for my Fluent model
