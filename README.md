@@ -1,9 +1,7 @@
 # Vapor Series Demo Server
-
 This repository contains the demo server application used in the YouTube video series about Vapor, a server-side Swift web framework. The project demonstrates various aspects of building backend applications with Vapor, with a particular focus on content handling and data processing.
 
 ## 📺 Watch the Series!
-
 [![Swift Nuggets with Radu Dan](assets/vapor-demo-banner.png)](https://www.youtube.com/watch?v=PF64Emosfs4&list=PL9UNszxz2Q2e7as86UF2MX8s1v7IB7EYf)
 
 > 🎬 **[Watch the Complete Vapor Series on YouTube](https://www.youtube.com/watch?v=PF64Emosfs4&list=PL9UNszxz2Q2e7as86UF2MX8s1v7IB7EYf)**
