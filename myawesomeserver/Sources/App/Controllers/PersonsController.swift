@@ -1,7 +1,7 @@
 import Vapor
 import Foundation
 
-struct PersonsController: RouteCollection {
+struct PersonsController: RouteCollection, Sendable {
     func boot(routes: any RoutesBuilder) throws {
         let persons = routes.grouped("persons")
 
@@ -32,7 +32,6 @@ struct PersonsController: RouteCollection {
 
     // MARK: - Create
 
-    @Sendable
     private func createPerson(request: Request) async throws -> PersonResponseContent {
         let requestContent = try request.content.decode(PersonRequestContent.self)
         guard let name = requestContent.name else {
@@ -40,35 +39,66 @@ struct PersonsController: RouteCollection {
         }
 
         let person = Person(requestContent: requestContent, name: name)
-        try await person.save(on: request.db)
+        try await person.create(on: request.db)
 
-        return try PersonResponseContent(person: person)
+        try await createPassportIfNeeded(
+            requestContent: requestContent.passport,
+            person: person,
+            request: request
+        )
+
+        return try await PersonResponseContent(
+            person: person,
+            passport: person.$passport.get(on: request.db)
+        )
+    }
+    
+    private func createPassportIfNeeded(
+        requestContent: PassportRequestContent?,
+        person: Person,
+        request: Request
+    ) async throws {
+        guard let requestContent else { return }
+            
+        let passport = Passport(
+            passportNumber: requestContent.number,
+            personID: try person.requireID()
+        )
+        try await passport.create(on: request.db)
     }
 
     // MARK: - Read
 
-    @Sendable
     private func getPersons(request: Request) async throws -> [PersonResponseContent] {
         let persons: [Person] = try await Person.query(on: request.db).withDeleted().all()
-        return try persons.map { person in
-            try PersonResponseContent(person: person)
+        var results: [PersonResponseContent] = []
+        
+        for person in persons {
+            let passport = try await person.$passport.get(on: request.db)
+            let responseContent = try PersonResponseContent(
+                person: person,
+                passport: passport
+            )
+            results.append(responseContent)
         }
+        
+        return results
     }
 
-    @Sendable
     private func getPerson(request: Request) async throws -> PersonResponseContent {
         let id: UUID? = request.parameters.get("id")
 
         guard let person = try await Person.find(id, on: request.db) else {
             throw Abort(.notFound)
         }
+        
+        let passport = try await person.$passport.get(on: request.db)
 
-        return try PersonResponseContent(person: person)
+        return try PersonResponseContent(person: person, passport: passport)
     }
 
     // MARK: - Update
 
-    @Sendable
     private func updatePerson(request: Request) async throws -> PersonResponseContent {
         let id: UUID? = request.parameters.get("id")
 
@@ -81,14 +111,43 @@ struct PersonsController: RouteCollection {
         person.setValue(requestContent.dateOfBirth, to: \.dateOfBirth)
         person.setValue(requestContent.isActive, to: \.isActive)
         person.setEyeColor(requestContent.eyeColor)
+        
+        try await updatePassportIfNeeded(
+            requestContent: requestContent.passport,
+            person: person,
+            request: request
+        )
+        
         try await person.update(on: request.db)
 
-        return try PersonResponseContent(person: person)
+        return try PersonResponseContent(
+            person: person,
+            passport: try await person.$passport.get(reload: true, on: request.db)
+        )
+    }
+    
+    private func updatePassportIfNeeded(
+        requestContent: PassportRequestContent?,
+        person: Person,
+        request: Request
+    ) async throws {
+        guard let requestContent else { return }
+            
+        let passport = try await person.$passport.get(on: request.db)
+        if let passport {
+            passport.passportNumber = requestContent.number
+            try await passport.update(on: request.db)
+        } else {
+            try await createPassportIfNeeded(
+                requestContent: requestContent,
+                person: person,
+                request: request
+            )
+        }
     }
 
     // MARK: - DELETE
 
-    @Sendable
     private func deletePerson(request: Request) async throws -> HTTPStatus {
         let id: UUID? = request.parameters.get("id")
 

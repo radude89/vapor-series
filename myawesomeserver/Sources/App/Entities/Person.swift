@@ -27,6 +27,9 @@ final class Person: Model, @unchecked Sendable {
 
     @Timestamp(key: "deleted_at", on: .delete)
     var deletedAt: Date?
+    
+    @OptionalChild(for: \.$person)
+    var passport: Passport?
 
     init() {}
 

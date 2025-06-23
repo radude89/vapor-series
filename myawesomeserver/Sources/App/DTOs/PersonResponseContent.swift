@@ -9,12 +9,13 @@ struct PersonResponseContent: Content {
     let createdAt: Date?
     let updatedAt: Date?
     let deletedAt: Date?
+    let passport: PassportResponseContent?
 }
 
 // MARK: - Helpers
 
 extension PersonResponseContent {
-    init(person: Person) throws {
+    init(person: Person, passport: Passport? = nil) throws {
         id = try person.requireID()
         name = person.name
         dateOfBirth = person.dateOfBirth
@@ -23,5 +24,6 @@ extension PersonResponseContent {
         createdAt = person.createdAt
         updatedAt = person.updatedAt
         deletedAt = person.deletedAt
+        self.passport = try PassportResponseContent(passport: passport)
     }
 }
