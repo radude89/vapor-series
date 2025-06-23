@@ -4,10 +4,15 @@ import Foundation
 struct PersonsController: RouteCollection, Sendable {
     func boot(routes: any RoutesBuilder) throws {
         let persons = routes.grouped("persons")
+        let moodLogs = persons.grouped(":id", "moodlogs")
 
         // CREATE
         persons.post { request in
             try await createPerson(request: request)
+        }
+        
+        moodLogs.post { request in
+            try await createMoodLogForPerson(request: request)
         }
 
         // READ
@@ -17,6 +22,10 @@ struct PersonsController: RouteCollection, Sendable {
 
         persons.get(":id") { request in
             try await getPerson(request: request)
+        }
+        
+        moodLogs.get { request in
+            try await getMoodLogsForPerson(request: request)
         }
 
         // UPDATE
@@ -66,6 +75,26 @@ struct PersonsController: RouteCollection, Sendable {
         )
         try await passport.create(on: request.db)
     }
+    
+    private func createMoodLogForPerson(
+        request: Request
+    ) async throws -> MoodLogResponseContent {
+        let personID: UUID? = request.parameters.get("id")
+        
+        guard let person = try await Person.find(personID, on: request.db) else {
+            throw Abort(.notFound)
+        }
+        
+        let requestContent = try request.content.decode(MoodLogRequestContent.self)
+        let moodLog = MoodLog(
+            personID: try person.requireID(),
+            mood: requestContent.mood,
+            note: requestContent.note
+        )
+        try await moodLog.create(on: request.db)
+        
+        return try MoodLogResponseContent(moodLog: moodLog)
+    }
 
     // MARK: - Read
 
@@ -95,6 +124,18 @@ struct PersonsController: RouteCollection, Sendable {
         let passport = try await person.$passport.get(on: request.db)
 
         return try PersonResponseContent(person: person, passport: passport)
+    }
+    
+    private func getMoodLogsForPerson(request: Request) async throws -> [MoodLogResponseContent] {
+        let id: UUID? = request.parameters.get("id")
+
+        guard let person = try await Person.find(id, on: request.db) else {
+            throw Abort(.notFound)
+        }
+        
+        return try await person.$moodLogs.get(on: request.db).map { moodLog in
+            try MoodLogResponseContent(moodLog: moodLog)
+        }
     }
 
     // MARK: - Update
@@ -164,15 +205,6 @@ struct PersonsController: RouteCollection, Sendable {
 // MARK: - Private helpers
 
 private extension Person {
-    func setValue<Value>(
-        _ value: Value?,
-        to keyPath: ReferenceWritableKeyPath<Person, Value>
-    ) {
-        if let value {
-            self[keyPath: keyPath] = value
-        }
-    }
-
     func setEyeColor(_ colorRawValue: String?) {
         if let colorRawValue {
             eyeColor = EyeColor(rawValue: colorRawValue)

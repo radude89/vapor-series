@@ -30,6 +30,9 @@ final class Person: Model, @unchecked Sendable {
     
     @OptionalChild(for: \.$person)
     var passport: Passport?
+    
+    @Children(for: \.$person)
+    var moodLogs: [MoodLog]
 
     init() {}
 
@@ -46,8 +49,4 @@ final class Person: Model, @unchecked Sendable {
         self.eyeColor = eyeColor
         self.isActive = isActive
     }
-}
-
-enum EyeColor: String, Codable {
-    case blue, black, other
 }

@@ -14,4 +14,5 @@ func routes(_ app: Application) throws {
     ContentConfiguration.global.use(decoder: decoder, for: .json)
 
     try app.register(collection: PersonsController())
+    try app.register(collection: MoodLogsController())
 }
