@@ -21,7 +21,7 @@ struct MoodLogsController: RouteCollection, Sendable {
         
         // DELETE
         moodLogs.delete(":id") { request in
-            try await deleteMoodLog(request: request)
+            try await delete(MoodLog.self, request: request)
         }
     }
 }
@@ -36,12 +36,7 @@ private extension MoodLogsController {
     }
     
     func getMoodLog(request: Request) async throws -> MoodLogResponseContent {
-        let id: UUID? = request.parameters.get("id")
-        
-        guard let moodLog = try await MoodLog.find(id, on: request.db) else {
-            throw Abort(.notFound)
-        }
-        
+        let moodLog: MoodLog = try await findByID(request: request)
         return try MoodLogResponseContent(moodLog: moodLog)
     }
 }
@@ -50,11 +45,7 @@ private extension MoodLogsController {
 
 private extension MoodLogsController {
     func updateMoodLog(request: Request) async throws -> MoodLogResponseContent {
-        let id: UUID? = request.parameters.get("id")
-        
-        guard let moodLog = try await MoodLog.find(id, on: request.db) else {
-            throw Abort(.notFound)
-        }
+        let moodLog: MoodLog = try await findByID(request: request)
         
         let requestContent = try request.content.decode(MoodLogRequestContent.self)
         moodLog.setValue(requestContent.mood, to: \.mood)
@@ -62,21 +53,5 @@ private extension MoodLogsController {
         try await moodLog.update(on: request.db)
         
         return try MoodLogResponseContent(moodLog: moodLog)
-    }
-}
-
-// MARK: - Delete
-
-private extension MoodLogsController {
-    func deleteMoodLog(request: Request) async throws -> HTTPStatus {
-        let id: UUID? = request.parameters.get("id")
-
-        guard let moodLog = try await MoodLog.find(id, on: request.db) else {
-            throw Abort(.notFound)
-        }
-
-        try await moodLog.delete(on: request.db)
-
-        return HTTPStatus.noContent
     }
 }

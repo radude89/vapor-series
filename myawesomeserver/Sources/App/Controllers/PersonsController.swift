@@ -35,7 +35,7 @@ struct PersonsController: RouteCollection, Sendable {
 
         // DELETE
         persons.delete(":id") { request in
-            try await deletePerson(request: request)
+            try await delete(Person.self, request: request)
         }
     }
 
@@ -115,24 +115,13 @@ struct PersonsController: RouteCollection, Sendable {
     }
 
     private func getPerson(request: Request) async throws -> PersonResponseContent {
-        let id: UUID? = request.parameters.get("id")
-
-        guard let person = try await Person.find(id, on: request.db) else {
-            throw Abort(.notFound)
-        }
-        
+        let person: Person = try await findByID(request: request)
         let passport = try await person.$passport.get(on: request.db)
-
         return try PersonResponseContent(person: person, passport: passport)
     }
     
     private func getMoodLogsForPerson(request: Request) async throws -> [MoodLogResponseContent] {
-        let id: UUID? = request.parameters.get("id")
-
-        guard let person = try await Person.find(id, on: request.db) else {
-            throw Abort(.notFound)
-        }
-        
+        let person: Person = try await findByID(request: request)
         return try await person.$moodLogs.get(on: request.db).map { moodLog in
             try MoodLogResponseContent(moodLog: moodLog)
         }
@@ -141,11 +130,7 @@ struct PersonsController: RouteCollection, Sendable {
     // MARK: - Update
 
     private func updatePerson(request: Request) async throws -> PersonResponseContent {
-        let id: UUID? = request.parameters.get("id")
-
-        guard let person = try await Person.find(id, on: request.db) else {
-            throw Abort(.notFound)
-        }
+        let person: Person = try await findByID(request: request)
 
         let requestContent = try request.content.decode(PersonRequestContent.self)
         person.setValue(requestContent.name, to: \.name)
@@ -185,20 +170,6 @@ struct PersonsController: RouteCollection, Sendable {
                 request: request
             )
         }
-    }
-
-    // MARK: - DELETE
-
-    private func deletePerson(request: Request) async throws -> HTTPStatus {
-        let id: UUID? = request.parameters.get("id")
-
-        guard let person = try await Person.find(id, on: request.db) else {
-            throw Abort(.notFound)
-        }
-
-        try await person.delete(on: request.db)
-
-        return HTTPStatus.noContent
     }
 }
 
