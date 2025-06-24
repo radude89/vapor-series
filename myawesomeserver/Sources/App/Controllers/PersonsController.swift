@@ -5,6 +5,7 @@ struct PersonsController: RouteCollection, Sendable {
     func boot(routes: any RoutesBuilder) throws {
         let persons = routes.grouped("persons")
         let moodLogs = persons.grouped(":id", "moodlogs")
+        let languages = persons.grouped(":id", "languages")
 
         // CREATE
         persons.post { request in
@@ -13,6 +14,10 @@ struct PersonsController: RouteCollection, Sendable {
         
         moodLogs.post { request in
             try await createMoodLogForPerson(request: request)
+        }
+        
+        languages.post { request in
+            try await learnLanguage(request: request)
         }
 
         // READ
@@ -27,6 +32,10 @@ struct PersonsController: RouteCollection, Sendable {
         moodLogs.get { request in
             try await getMoodLogsForPerson(request: request)
         }
+        
+        languages.get { request in
+            try await getPersonLanguages(request: request)
+        }
 
         // UPDATE
         persons.put(":id") { request in
@@ -36,6 +45,10 @@ struct PersonsController: RouteCollection, Sendable {
         // DELETE
         persons.delete(":id") { request in
             try await delete(Person.self, request: request)
+        }
+        
+        languages.delete(":language_id") { request in
+            try await forgetLanguage(request: request)
         }
     }
 
@@ -95,6 +108,41 @@ struct PersonsController: RouteCollection, Sendable {
         
         return try MoodLogResponseContent(moodLog: moodLog)
     }
+    
+    private func learnLanguage(request: Request) async throws -> HTTPStatus {
+        let person: Person = try await findByID(request: request)
+        let requestContent = try request.content.decode(PersonLanguageRequestContent.self)
+        let language = try await createLanguageIfNeeded(
+            requestContent: requestContent,
+            request: request
+        )
+        
+        if try await person.$languages.isAttached(to: language, on: request.db) {
+            throw Abort(.conflict, reason: "Person already speaks this language")
+        }
+        
+        try await person.$languages.attach(language, on: request.db) { personLanguage in
+            personLanguage.dateLearnt = Date()
+            personLanguage.isPrimary = requestContent.isPrimary
+        }
+        
+        return .created
+    }
+    
+    private func createLanguageIfNeeded(
+        requestContent: PersonLanguageRequestContent,
+        request: Request
+    ) async throws -> Language {
+        if let language = try await Language.query(on: request.db)
+            .filter(\.$code, .equal, requestContent.code)
+            .first() {
+            return language
+        } else {
+            let language = Language(code: requestContent.code)
+            try await language.create(on: request.db)
+            return language
+        }
+    }
 
     // MARK: - Read
 
@@ -124,6 +172,21 @@ struct PersonsController: RouteCollection, Sendable {
         let person: Person = try await findByID(request: request)
         return try await person.$moodLogs.get(on: request.db).map { moodLog in
             try MoodLogResponseContent(moodLog: moodLog)
+        }
+    }
+    
+    private func getPersonLanguages(request: Request) async throws -> [PersonLanguageResponseContent] {
+        let person: Person = try await findByID(request: request)
+        let personLanguages = try await PersonLanguage.query(on: request.db)
+            .filter(\.$person.$id, .equal, person.requireID())
+            .with(\.$language)
+            .all()
+        
+        return try personLanguages.map { personLanguage in
+            try PersonLanguageResponseContent(
+                personLanguage: personLanguage,
+                person: person
+            )
         }
     }
 
@@ -170,6 +233,15 @@ struct PersonsController: RouteCollection, Sendable {
                 request: request
             )
         }
+    }
+    
+    // MARK: - Delete
+    
+    private func forgetLanguage(request: Request) async throws -> HTTPStatus {
+        let person: Person = try await findByID(request: request)
+        let language: Language = try await findByID(request: request, idParamName: "language_id")
+        try await person.$languages.detach(language, on: request.db)
+        return .noContent
     }
 }
 
