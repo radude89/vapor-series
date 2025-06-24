@@ -7,7 +7,9 @@ public func configure(_ app: Application) async throws {
     app.migrations.add(
         CreatePersonMigration(),
         CreatePassportMigration(),
-        CreateMoodLogMigration()
+        CreateMoodLogMigration(),
+        CreateLanguageMigration(),
+        CreatePersonLanguageMigration(),
     )
     try await app.autoMigrate()
     try routes(app)

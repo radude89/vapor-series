@@ -33,6 +33,13 @@ final class Person: Model, @unchecked Sendable {
     
     @Children(for: \.$person)
     var moodLogs: [MoodLog]
+    
+    @Siblings(
+        through: PersonLanguage.self,
+        from: \.$person,
+        to: \.$language
+    )
+    var languages: [Language]
 
     init() {}
 

@@ -15,4 +15,5 @@ func routes(_ app: Application) throws {
 
     try app.register(collection: PersonsController())
     try app.register(collection: MoodLogsController())
+    try app.register(collection: LanguagesController())
 }
