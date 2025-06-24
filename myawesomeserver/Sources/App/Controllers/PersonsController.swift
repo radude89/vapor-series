@@ -1,5 +1,6 @@
 import Vapor
 import Foundation
+import Fluent
 
 struct PersonsController: RouteCollection, Sendable {
     func boot(routes: any RoutesBuilder) throws {
@@ -27,6 +28,14 @@ struct PersonsController: RouteCollection, Sendable {
 
         persons.get(":id") { request in
             try await getPerson(request: request)
+        }
+        
+        persons.get("names") { request in
+            try await getAllNames(request: request)
+        }
+        
+        persons.get("search") { request in
+            try await getPersonsByName(request: request)
         }
         
         moodLogs.get { request in
@@ -189,6 +198,28 @@ struct PersonsController: RouteCollection, Sendable {
             )
         }
     }
+    
+    private func getAllNames(request: Request) async throws -> [String] {
+        try await Person.query(on: request.db).all(\.$name)
+    }
+    
+    private func getPersonsByName(request: Request) async throws -> [PersonResponseContent] {
+        guard let name = request.query[String.self, at: "name"] else {
+            throw Abort(.badRequest, reason: "Name is required")
+        }
+        
+        return try await Person
+            .query(on: request.db)
+            .group(.or) { group in
+                group.filter(\.$name =~ name)
+                    .filter(\.$name ~= name)
+                    .filter(\.$name ~~ name)
+            }
+            .with(\.$passport)
+            .all()
+            .map { try PersonResponseContent(person: $0, passport: $0.passport) }
+    }
+    
 
     // MARK: - Update
 
