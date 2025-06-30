@@ -38,6 +38,14 @@ struct PersonsController: RouteCollection, Sendable {
             try await getPersonsByName(request: request)
         }
         
+        persons.get("passports") { request in
+            try await getPersonsWithPassport(request: request)
+        }
+        
+        persons.get("count") { request in
+            try await getNumberOfPersons(request: request)
+        }
+        
         moodLogs.get { request in
             try await getMoodLogsForPerson(request: request)
         }
@@ -50,10 +58,18 @@ struct PersonsController: RouteCollection, Sendable {
         persons.put(":id") { request in
             try await updatePerson(request: request)
         }
+        
+        persons.put("deactivate") { request in
+            try await deactivatePersonByName(request: request)
+        }
 
         // DELETE
         persons.delete(":id") { request in
             try await delete(Person.self, request: request)
+        }
+        
+        persons.delete { request in
+            try await deletePersonsByName(request: request)
         }
         
         languages.delete(":language_id") { request in
@@ -157,15 +173,25 @@ struct PersonsController: RouteCollection, Sendable {
 
     // MARK: - Read
     
-    private func getPersons(request: Request) async throws -> [PersonResponseContent] {
-        try await Person
-            .query(on: request.db)
+    private func getPersons(request: Request) async throws -> Page<PersonResponseContent> {
+        let personsQueryBuilder = Person.query(on: request.db)
+        
+        try await personsQueryBuilder.chunk(max: 2) { results in
+            for (index, result) in results.enumerated() {
+                switch result {
+                case .success(let person):
+                    print("#### Processed \(person.name). Chunk number \(index + 1) out of \(results.count)")
+                case .failure(let error):
+                    print("#### Failed to process at index \(index). Encountered error \(error.localizedDescription)")
+                }
+            }
+        }
+        
+        return try await personsQueryBuilder
             .withDeleted()
             .with(\.$passport)
-            .all()
-            .map { person in
-                try PersonResponseContent(person: person, passport: person.passport)
-            }
+            .paginate(for: request)
+            .map { try PersonResponseContent(person: $0, passport: $0.passport) }
     }
 
     private func getPerson(request: Request) async throws -> PersonResponseContent {
@@ -219,6 +245,19 @@ struct PersonsController: RouteCollection, Sendable {
             .all()
             .map { try PersonResponseContent(person: $0, passport: $0.passport) }
     }
+    
+    private func getPersonsWithPassport(request: Request) async throws -> [PersonResponseContent] {
+        try await Person
+            .query(on: request.db)
+            .join(Passport.self, on: \Person.$id == \Passport.$person.$id)
+            .with(\.$passport)
+            .all()
+            .map { try PersonResponseContent(person: $0, passport: $0.passport) }
+    }
+    
+    private func getNumberOfPersons(request: Request) async throws -> Int {
+        try await Person.query(on: request.db).count()
+    }
 
     // MARK: - Update
 
@@ -265,12 +304,37 @@ struct PersonsController: RouteCollection, Sendable {
         }
     }
     
+    private func deactivatePersonByName(request: Request) async throws -> HTTPStatus {
+        guard let name: String = try request.content.get(at: "name") else {
+            throw Abort(.badRequest, reason: "Name is required")
+        }
+        
+        try await Person.query(on: request.db)
+            .filter(\.$name =~ name)
+            .set(\.$isActive, to: false)
+            .update()
+        
+        return .noContent
+    }
+    
     // MARK: - Delete
     
-    func forgetLanguage(request: Request) async throws -> HTTPStatus {
+    private func forgetLanguage(request: Request) async throws -> HTTPStatus {
         let person: Person = try await findByID(request: request)
         let language: Language = try await findByID(request: request, idParamName: "language_id")
         try await person.$languages.detach(language, on: request.db)
+        return .noContent
+    }
+    
+    private func deletePersonsByName(request: Request) async throws -> HTTPStatus {
+        guard let name: String = try request.content.get(at: "name") else {
+            throw Abort(.badRequest, reason: "Name is required")
+        }
+        
+        try await Person.query(on: request.db)
+            .filter(\.$name =~ name)
+            .delete()
+        
         return .noContent
     }
 }
