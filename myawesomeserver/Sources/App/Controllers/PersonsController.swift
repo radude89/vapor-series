@@ -30,6 +30,14 @@ struct PersonsController: RouteCollection, Sendable {
             try await getPerson(request: request)
         }
         
+        persons.get("name") { request in
+            try await getAllNames(request: request)
+        }
+        
+        persons.get("search") { request in
+            try await getPersonsByName(request: request)
+        }
+        
         moodLogs.get { request in
             try await getMoodLogsForPerson(request: request)
         }
@@ -150,19 +158,14 @@ struct PersonsController: RouteCollection, Sendable {
     // MARK: - Read
     
     private func getPersons(request: Request) async throws -> [PersonResponseContent] {
-        let persons: [Person] = try await Person.query(on: request.db).withDeleted().all()
-        var results: [PersonResponseContent] = []
-        
-        for person in persons {
-            let passport = try await person.$passport.get(on: request.db)
-            let responseContent = try PersonResponseContent(
-                person: person,
-                passport: passport
-            )
-            results.append(responseContent)
-        }
-        
-        return results
+        try await Person
+            .query(on: request.db)
+            .withDeleted()
+            .with(\.$passport)
+            .all()
+            .map { person in
+                try PersonResponseContent(person: person, passport: person.passport)
+            }
     }
 
     private func getPerson(request: Request) async throws -> PersonResponseContent {
@@ -193,6 +196,28 @@ struct PersonsController: RouteCollection, Sendable {
                 person: person
             )
         }
+    }
+    
+    private func getAllNames(request: Request) async throws -> [String] {
+        try await Person.query(on: request.db).all(\.$name)
+    }
+    
+    private func getPersonsByName(request: Request) async throws -> [PersonResponseContent] {
+        guard let name = request.query[String.self, at: "name"] else {
+            throw Abort(.badRequest, reason: "Name is required")
+        }
+        
+        return try await Person
+            .query(on: request.db)
+            .group(.or) { group in
+                group
+                    .filter(\.$name =~ name)
+                    .filter(\.$name ~= name)
+                    .filter(\.$name ~~ name)
+            }
+            .with(\.$passport)
+            .all()
+            .map { try PersonResponseContent(person: $0, passport: $0.passport) }
     }
 
     // MARK: - Update
